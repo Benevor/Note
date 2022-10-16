@@ -433,23 +433,21 @@ HashTableBucketPage() = delete;
    - 修改dir槽的指向
    - 划分数据
    - Insert()
-
 2. Merge
 
    - 根据key锁定到空bucket page，找到split image，检查是否能merge
    - merge：更新指向这两个bucket page的所有dir槽的指向和local depth
    - （收缩哈希表）
    - 找到现在的split image的split image，判断是否需要级联merge
+3. 时机不同
+  - Split在bucket page已经满了，并且再次向其中插入kv对时触发
+  - Merge在bucket page变为空时，立即触发
 
-3. 区别
+### Split的隐形级联
 
-   - 时机不同
-     - Split在bucket page已经满了，并且再次向其中插入kv对时触发
-     - Merge在bucket page变为空时，立即触发
+假设bucket page A已经满了，这是一个新的kv对 t 想要插入其中。很显然会触发split。split后，新产生bucket page B。存在一种情况：A中所有已经存在的kv对和新kv对t，都还是会哈希到bucket page A，bucket page B仍旧是空的。显然这时候，需要继续split
 
-   - 次数不同
-     - Split只会调用一次
-     - Merge则可能级联触发
+实现中，虽然SplitInsert()函数中没有像Merge()一样的while结构，但是SplitInsert()和Insert()可以相互调用。即SplitInsert()一次后，Insert()仍旧因为bucket page满了而失败，则会再次调用SplitInsert()，以此实现级联split。
 
 ### Merge的特殊性
 
