@@ -273,6 +273,8 @@ bool Insert(Transaction *transaction, const KeyType &key, const ValueType &value
 // 1. 尝试向指定bucket page中插入
 // 2. 如果插入成功，或是因为kv对重复而失败，则释放dir page和bucket page对应的2个BP page，并释放所有的锁，直接返回
 // 3. 若是因为bucket page满了而失败，则释放页面占用和锁占用，触发Split Insert()
+
+// 注意：在kv对重复时，不论bucket page是否满了都不用触发split
 ```
 
 ```C++
@@ -500,7 +502,9 @@ HashTableBucketPage() = delete;
 
 ### 其他
 
+- 如何从磁盘恢复一个hash table？
 - void HashTableDirectoryPage::VerifyIntegrity()干啥的
+- template class HashTableBucketPage<hash_t, TmpTuple, HashComparator>;干啥的
 - directory槽满了或bucket槽满了的情况？？？
   - 两类槽的上限数量在概念章节都做了陈述
 
