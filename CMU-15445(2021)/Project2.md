@@ -442,8 +442,10 @@ HashTableBucketPage() = delete;
    - （收缩哈希表）
    - 找到现在的split image的split image，判断是否需要级联merge
 3. 时机不同
-  - Split在bucket page已经满了，并且再次向其中插入kv对时触发
-  - Merge在bucket page变为空时，立即触发
+
+     - Split在bucket page已经满了，并且再次向其中插入kv对时触发
+
+     - Merge在bucket page变为空时，立即触发
 
 ### Split的隐形级联
 
@@ -453,7 +455,8 @@ HashTableBucketPage() = delete;
 
 ### Merge的特殊性
 
-- 级联merge：完成一次merge后，再去找merge后bucket page(A)的split image(B)，判断是否能继续merge。因为B可能之前就变为空了，只是A的local depth比B大，没有merge，现在A的local depth变小了，存在与B merge的可能性
+- 级联merge(1)：完成一次merge后，再去找merge后bucket page(A)的split image(B)，判断是否能继续merge。因为B可能之前就变为空了，只是A的local depth比B大，没有merge，现在A的local depth变小了，存在与B merge的可能性
+- 级联merge(2)：假设bucket page(a) bucket page(b)是一对可以merge的split image，a先变为空，触发merge，但是merge需要等到写锁，有可能这时b也在remove，因此当merge拿到写锁时，b可能也是空的，导致a,b进行merge后的c也是空的，从而需要进一步merge
 
 <img src="projects-image/3.jpg" style="zoom:13%;" />
 
@@ -462,10 +465,20 @@ HashTableBucketPage() = delete;
    2. 根据split image，寻找merge的对。
    3. （但是两种方案都能通过线上测试）
 
-### UnpinPage()
+### 并发的影响
 
-- num of(Unpin) = num of (New) + num of (Fetch)
-- 这三个操作，都是调用Buffer Pool的操作
+关于split和merge
+
+- 在SplitInsert()和Merge()函数中，在真正开始split或merge操作之前，必须要检查key所对应的bucket page是否还是满的或者空的。因为SplitInsert()和Merge()需要等待写锁，这个过程中，可能有其他的Insert()或Remove()操作，持有hb读锁，改变了key所对应的bucket page的满/空情况，致使不需要再split或merge
+- 这种并发同样是第二种级联merge的产生原因
+
+### Unlatch()与UnpinPage()
+
+- UnpinPage()
+  - num of(Unpin) = num of (New) + num of (Fetch)
+  - 这三个操作，都是调用Buffer Pool的操作
+- raw_bucket_page的Unlatch()要在UnpinPage()之前调用，因为UnpinPage()后，BP Page可能直接被换出buffer pool，再Unlatch()就没有意义了。
+- 但是table_latch_.xUnlock()要在UnpinPage(dir page id)之后，因为table_latch属于hash table，不属于BP Page
 
 ### ！！并发控制 ！！
 
@@ -502,6 +515,7 @@ HashTableBucketPage() = delete;
 
 ### 其他
 
+- split image的实现对不对？算出来的split image会不会无效
 - 如何从磁盘恢复一个hash table？
 - void HashTableDirectoryPage::VerifyIntegrity()干啥的
 - template class HashTableBucketPage<hash_t, TmpTuple, HashComparator>;干啥的
@@ -513,4 +527,4 @@ HashTableBucketPage() = delete;
 - .cpp文件末尾，一堆template class干啥的
 - reinterpret_cast<HashTableDirectoryPage *>，怎么说
 - MappingType array_[BUCKET_ARRAY_SIZE+1]，有什么后果？
--  [bucket_page, bucket_page_data] = FetchBucketPage(old_bucket_page_id); 为啥不行
+- ReaderWriterLatch中的mutex和condition_variable各有什么作用？
